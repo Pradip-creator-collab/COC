@@ -8,19 +8,31 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bitter:wght@600;700&family=Inter:wght@400;500;600&display=swap');
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: #17140F; font-family: 'Inter', sans-serif; }
+  html, body { margin: 0; background: #14120F; font-family: 'Inter', sans-serif; }
   #root { min-height: 100vh; }
   textarea, input {
-    background: #1E1912; border: 1px solid #3A3226; color: #EDE6D6;
+    background: #201D19; border: 1px solid #39352E; color: #EDEAE4;
     padding: 8px 10px; font-family: 'Inter', sans-serif; font-size: 13px; outline: none;
+    transition: border-color 0.15s ease;
   }
-  textarea:focus, input:focus { border-color: #D9A441; }
-  textarea::placeholder, input::placeholder { color: #6B6152; }
-  .row { animation: fade 0.3s ease; }
+  textarea:focus, input:focus { border-color: #C7A661; }
+  textarea::placeholder, input::placeholder { color: #6E6A62; }
+  button { transition: transform 0.12s ease, opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease; }
+  button:active { transform: scale(0.96); }
+  .row { animation: fade 0.35s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-  .btn:hover { background: #E8B850 !important; }
-  .name:hover { color: #D9A441 !important; cursor: pointer; }
-  @media (prefers-reduced-motion: reduce) { .row { animation: none; } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes shimmer { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .pulse-ready { animation: pulse 1.6s ease-in-out infinite; }
+  .syncing { animation: shimmer 1.2s ease-in-out infinite; }
+  .panel-in { animation: slideIn 0.25s ease; }
+  .btn:hover { background: #D8BA7B !important; }
+  .name:hover { color: #C7A661 !important; cursor: pointer; text-decoration: underline; }
+  @media (prefers-reduced-motion: reduce) {
+    .row, .pulse-ready, .syncing, .panel-in { animation: none; }
+    button:active { transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -59,18 +71,18 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 const BUILDER_CATEGORIES = ["buildings", "buildings2", "traps", "traps2"];
 
 const CATEGORY_MAP = {
-  buildings: { label: "Building", color: "#D9A441" },
-  buildings2: { label: "Building (Builder Base)", color: "#D9A441" },
-  traps: { label: "Trap", color: "#C77B5A" },
-  traps2: { label: "Trap (Builder Base)", color: "#C77B5A" },
-  heroes: { label: "Hero", color: "#8B5FBF" },
-  heroes2: { label: "Hero (Builder Base)", color: "#8B5FBF" },
-  units: { label: "Troop (Lab)", color: "#6FAE68" },
-  units2: { label: "Troop (Builder Base Lab)", color: "#6FAE68" },
-  spells: { label: "Spell (Lab)", color: "#6FAE68" },
-  pets: { label: "Pet House", color: "#C77B5A" },
-  siege_machines: { label: "Siege Workshop", color: "#D9A441" },
-  guardians: { label: "Guardian", color: "#8B5FBF" },
+  buildings: { label: "Building", color: "#C7A661" },
+  buildings2: { label: "Building (Builder Base)", color: "#C7A661" },
+  traps: { label: "Trap", color: "#B98A6B" },
+  traps2: { label: "Trap (Builder Base)", color: "#B98A6B" },
+  heroes: { label: "Hero", color: "#B0A6D9" },
+  heroes2: { label: "Hero (Builder Base)", color: "#B0A6D9" },
+  units: { label: "Troop (Lab)", color: "#9EC2A0" },
+  units2: { label: "Troop (Builder Base Lab)", color: "#9EC2A0" },
+  spells: { label: "Spell (Lab)", color: "#9EC2A0" },
+  pets: { label: "Pet House", color: "#B98A6B" },
+  siege_machines: { label: "Siege Workshop", color: "#C7A661" },
+  guardians: { label: "Guardian", color: "#B0A6D9" },
 };
 
 function usernameToEmail(username) {
@@ -183,13 +195,17 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
   const [villages, setVillages] = useState({}); // { [tag]: { snapshot, totalBuilders, label } }
   const [activeTag, setActiveTag] = useState(null);
   const [nameMap, setNameMap] = useState({});
+  const [maxLevelMap, setMaxLevelMap] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [importOpen, setImportOpen] = useState(false);
   const [rawInput, setRawInput] = useState("");
+  const [nicknameInput, setNicknameInput] = useState("");
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const [editingMaxId, setEditingMaxId] = useState(null);
+  const [maxEditValue, setMaxEditValue] = useState("");
   const [editingTag, setEditingTag] = useState(null);
   const [tagLabelValue, setTagLabelValue] = useState("");
   const [activeFilter, setActiveFilter] = useState(null);
@@ -206,9 +222,16 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
     docRef.get().then((snap) => {
       if (cancelled) return;
       const d = snap.data() || {};
-      const v = d.villages || {};
+      // Backward-compat: older accounts stored a single top-level `snapshot`.
+      // Migrate that in-memory into the villages map so existing data is never lost.
+      let v = d.villages || {};
+      if (Object.keys(v).length === 0 && d.snapshot) {
+        const legacyTag = d.snapshot.tag || "main";
+        v = { [legacyTag]: { snapshot: d.snapshot, totalBuilders: d.totalBuilders || 6, label: legacyTag } };
+      }
       setVillages(v);
       if (d.nameMap) setNameMap(d.nameMap);
+      if (d.maxLevelMap) setMaxLevelMap(d.maxLevelMap);
       const tags = Object.keys(v);
       setActiveTag(d.activeTag && v[d.activeTag] ? d.activeTag : (tags[0] || null));
       setDataLoaded(true);
@@ -222,12 +245,12 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
     setSyncState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      docRef.set({ villages, nameMap, activeTag }, { merge: true })
+      docRef.set({ villages, nameMap, maxLevelMap, activeTag }, { merge: true })
         .then(() => setSyncState("saved"))
         .catch(() => setSyncState("idle"));
     }, 700);
     return () => clearTimeout(saveTimer.current);
-  }, [villages, nameMap, activeTag, dataLoaded, readOnly]);
+  }, [villages, nameMap, maxLevelMap, activeTag, dataLoaded, readOnly]);
 
   const villageTags = Object.keys(villages);
   const activeVillage = activeTag ? villages[activeTag] : null;
@@ -249,17 +272,27 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
       const result = parseVillageJSON(rawInput.trim());
       if (result.items.length === 0) setError("Parsed fine, but no active upgrades with timers were found.");
       const tag = result.tag && result.tag.trim() ? result.tag.trim() : `village-${Date.now()}`;
+      const nickname = nicknameInput.trim();
       setVillages((prev) => ({
         ...prev,
-        [tag]: { snapshot: result, totalBuilders: (prev[tag] && prev[tag].totalBuilders) || 6, label: (prev[tag] && prev[tag].label) || tag },
+        [tag]: {
+          snapshot: result,
+          totalBuilders: (prev[tag] && prev[tag].totalBuilders) || 6,
+          label: nickname || (prev[tag] && prev[tag].label) || "",
+        },
       }));
       setActiveTag(tag);
       setRawInput("");
+      setNicknameInput("");
       setImportOpen(false);
+      if (!nickname && !(villages[tag] && villages[tag].label)) {
+        setEditingTag(tag);
+        setTagLabelValue("");
+      }
     } catch (e) {
       setError("Couldn't read that as village JSON. Copy the full text from Data Export.");
     }
-  }, [rawInput]);
+  }, [rawInput, nicknameInput, villages]);
 
   const sortedItems = useMemo(() => (snapshot ? [...snapshot.items].sort((a, b) => a.completionMs - b.completionMs) : []), [snapshot]);
   const busyBuilders = useMemo(() => sortedItems.filter((it) => BUILDER_CATEGORIES.includes(it.category) && it.completionMs > now).length, [sortedItems, now]);
@@ -294,9 +327,11 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
 
   const startEdit = (key, current) => { setEditingId(key); setEditValue(current || ""); };
   const commitEdit = (id) => { setNameMap((prev) => ({ ...prev, [id]: editValue.trim() || prev[id] })); setEditingId(null); };
+  const startMaxEdit = (key, current) => { setEditingMaxId(key); setMaxEditValue(current || ""); };
+  const commitMaxEdit = (id) => { setMaxLevelMap((prev) => ({ ...prev, [id]: maxEditValue.trim() })); setEditingMaxId(null); };
   const readyCount = sortedItems.filter((it) => it.completionMs <= now).length;
 
-  const startTagEdit = (tag) => { setEditingTag(tag); setTagLabelValue(villages[tag].label || tag); };
+  const startTagEdit = (tag) => { setEditingTag(tag); setTagLabelValue(villages[tag].label || ""); };
   const commitTagEdit = (tag) => {
     setVillages((prev) => ({ ...prev, [tag]: { ...prev[tag], label: tagLabelValue.trim() || prev[tag].label } }));
     setEditingTag(null);
@@ -322,7 +357,7 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
             <h1 style={s.title}>{readOnly ? viewingLabel : "Upgrade Watch"}</h1>
           </div>
           <div style={s.metaBox}>
-            <span style={s.metaValue}>{readOnly ? "" : syncState === "saving" ? "Syncing…" : "Synced ☁"}</span>
+            <span className={syncState === "saving" ? "syncing" : ""} style={s.metaValue}>{readOnly ? "" : syncState === "saving" ? "Syncing…" : "Synced ☁"}</span>
             {isAdmin && !readOnly && <button onClick={onOpenAdmin} style={s.logoutBtn}>Admin panel</button>}
             <button onClick={onLogout} style={s.logoutBtn}>{readOnly ? "Back" : "Log out"}</button>
           </div>
@@ -342,7 +377,8 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
                       onChange={(e) => setTagLabelValue(e.target.value)}
                       onBlur={() => commitTagEdit(tag)}
                       onKeyDown={(e) => e.key === "Enter" && commitTagEdit(tag)}
-                      style={{ width: 100, fontSize: 11 }}
+                      placeholder="Player name"
+                      style={{ width: 110, fontSize: 11 }}
                     />
                   ) : (
                     <button
@@ -351,7 +387,7 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
                       style={{ ...s.filterChip, ...(isActive ? s.filterChipActive : {}) }}
                       title={readOnly ? tag : "Tap to switch, double-tap to rename"}
                     >
-                      {villages[tag].label || tag}
+                      {villages[tag].label || (readOnly ? tag : "Unnamed — tap to name")}
                     </button>
                   )}
                   {!readOnly && villageTags.length > 1 && (
@@ -371,13 +407,13 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
 
         {snapshot && (
           <div style={s.statsBar}>
-            <span style={s.statText}><strong style={{ color: "#EDE6D6" }}>{sortedItems.length}</strong><span style={{ color: "#A89A82" }}> upgrades tracked</span></span>
+            <span style={s.statText}><strong style={{ color: "#EDEAE4" }}>{sortedItems.length}</strong><span style={{ color: "#A7A29A" }}> upgrades tracked</span></span>
             <span style={s.builderStat}>
-              🔨 <strong style={{ color: "#EDE6D6" }}>{busyBuilders}</strong><span style={{ color: "#A89A82" }}>/</span>
+              🔨 <strong style={{ color: "#EDEAE4" }}>{busyBuilders}</strong><span style={{ color: "#A7A29A" }}>/</span>
               <input type="number" min="1" max="9" value={totalBuilders} onChange={(e) => setTotalBuilders(Math.max(1, Number(e.target.value) || 1))} style={s.builderInput} />
-              <span style={{ color: "#A89A82" }}>busy</span>
+              <span style={{ color: "#A7A29A" }}>busy</span>
             </span>
-            {readyCount > 0 && <span style={s.readyPill}>{readyCount} ready</span>}
+            {readyCount > 0 && <span className="pulse-ready" style={s.readyPill}>{readyCount} ready</span>}
           </div>
         )}
 
@@ -397,7 +433,7 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
           {snapshot && sortedItems.length === 0 && <div style={s.empty}>Nothing currently upgrading in your last import.</div>}
           {snapshot && sortedItems.length > 0 && filteredItems.length === 0 && <div style={s.empty}>Nothing in this category right now.</div>}
           {filteredItems.map((it, idx) => {
-            const cat = CATEGORY_MAP[it.category] || { label: it.category, color: "#A89A82" };
+            const cat = CATEGORY_MAP[it.category] || { label: it.category, color: "#A7A29A" };
             const key = `${it.category}-${it.id}-${idx}`;
             const remaining = it.completionMs - now;
             const isReady = remaining <= 0;
@@ -414,10 +450,32 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
                       <span className={readOnly ? "" : "name"} style={s.rowName} onClick={() => !readOnly && startEdit(key, nameMap[it.id])} title={readOnly ? "" : "Click to rename"}>{displayName}{!readOnly && " ✎"}</span>
                     )}
                     <span style={s.rowLevel}>{it.lvl != null ? `→ Lv ${it.lvl}` : ""}</span>
+                    {it.lvl != null && (
+                      editingMaxId === key && !readOnly ? (
+                        <input
+                          autoFocus
+                          value={maxEditValue}
+                          onChange={(e) => setMaxEditValue(e.target.value)}
+                          onBlur={() => commitMaxEdit(it.id)}
+                          onKeyDown={(e) => e.key === "Enter" && commitMaxEdit(it.id)}
+                          placeholder="max"
+                          style={{ width: 40, fontSize: 11 }}
+                        />
+                      ) : (
+                        <span
+                          className={readOnly ? "" : "name"}
+                          style={s.rowMaxLevel}
+                          onClick={() => !readOnly && startMaxEdit(key, maxLevelMap[it.id])}
+                          title={readOnly ? "" : "Click to set this item's max level"}
+                        >
+                          / {maxLevelMap[it.id] || "max?"}
+                        </span>
+                      )
+                    )}
                   </div>
                   <div style={s.rowBottom}>finishes {formatClockTime(it.completionMs)}</div>
                 </div>
-                <div style={s.rowRight}><span style={{ ...s.countdown, color: isReady ? "#6FAE68" : "#EDE6D6" }}>{formatRemaining(remaining)}</span></div>
+                <div style={s.rowRight}><span className={isReady ? "pulse-ready" : ""} style={{ ...s.countdown, color: isReady ? "#C7A661" : "#EDEAE4" }}>{formatRemaining(remaining)}</span></div>
               </div>
             );
           })}
@@ -427,7 +485,7 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
           <button onClick={handleCopySummary} style={s.copyBtn}>{copied ? "✓ Copied" : "📋 Copy reminder list"}</button>
         )}
         {!readOnly && reminderText && (
-          <div style={s.reminderBox}>
+          <div className="panel-in" style={s.reminderBox}>
             <div style={s.importHint}>If the copy didn't register, tap below, select all, and copy manually.</div>
             <textarea readOnly value={reminderText} rows={4} onFocus={(e) => e.target.select()} style={{ width: "100%", resize: "vertical" }} />
           </div>
@@ -440,12 +498,18 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
         )}
 
         {!readOnly && importOpen && (
-          <div style={s.importBox}>
+          <div className="panel-in" style={s.importBox}>
             <div style={s.importHint}>In-game: Settings → More Settings → Data Export → Copy. Paste the full text here.</div>
+            <input
+              value={nicknameInput}
+              onChange={(e) => setNicknameInput(e.target.value)}
+              placeholder="Player/base nickname (optional, e.g. Main Base)"
+              style={{ width: "100%", marginBottom: 8 }}
+            />
             <textarea value={rawInput} onChange={(e) => setRawInput(e.target.value)} placeholder='{"tag":"#...","timestamp":...,"buildings":[...]}' rows={6} style={{ width: "100%", resize: "vertical" }} />
             {error && <div style={s.errorText}>{error}</div>}
             <div style={s.formActions}>
-              <button type="button" style={s.cancelBtn} onClick={() => { setImportOpen(false); setError(""); setRawInput(""); }}>Cancel</button>
+              <button type="button" style={s.cancelBtn} onClick={() => { setImportOpen(false); setError(""); setRawInput(""); setNicknameInput(""); }}>Cancel</button>
               <button type="button" className="btn" style={s.submitBtn} onClick={handleImport}>Parse & track</button>
             </div>
           </div>
@@ -568,57 +632,58 @@ function App() {
 }
 
 const as = {
-  wrapper: { background: "#17140F", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
-  card: { maxWidth: 360, width: "100%", background: "#1B160F", border: "1px solid #3A3226", padding: 24 },
-  eyebrow: { fontSize: 12, color: "#8B5FBF", marginBottom: 2 },
-  title: { fontFamily: "'Bitter', serif", fontWeight: 700, fontSize: 24, color: "#EDE6D6", margin: "0 0 8px 0" },
-  sub: { fontSize: 12, color: "#A89A82", marginBottom: 16, lineHeight: 1.5 },
-  error: { color: "#C77B5A", fontSize: 12, marginBottom: 10 },
-  submitBtn: { width: "100%", background: "#D9A441", color: "#17140F", border: "none", padding: "10px 0", fontWeight: 600, fontSize: 13, cursor: "pointer" },
-  switchBtn: { marginTop: 14, width: "100%", background: "none", border: "none", color: "#8B5FBF", fontSize: 12, cursor: "pointer" },
+  wrapper: { background: "#14120F", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
+  card: { maxWidth: 360, width: "100%", background: "#1C1916", border: "1px solid #39352E", padding: 24 },
+  eyebrow: { fontSize: 12, color: "#B0A6D9", marginBottom: 2, letterSpacing: "0.04em", textTransform: "uppercase" },
+  title: { fontFamily: "'Bitter', serif", fontWeight: 700, fontSize: 24, color: "#EDEAE4", margin: "0 0 8px 0" },
+  sub: { fontSize: 12, color: "#A7A29A", marginBottom: 16, lineHeight: 1.5 },
+  error: { color: "#D9A88A", fontSize: 12, marginBottom: 10, border: "1px solid #4A3D33", padding: "6px 8px" },
+  submitBtn: { width: "100%", background: "#C7A661", color: "#1B1712", border: "none", padding: "10px 0", fontWeight: 600, fontSize: 13, cursor: "pointer" },
+  switchBtn: { marginTop: 14, width: "100%", background: "none", border: "none", color: "#B0A6D9", fontSize: 12, cursor: "pointer", textDecoration: "underline" },
 };
 
 const s = {
-  wrapper: { background: "#17140F", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Inter', sans-serif" },
+  wrapper: { background: "#14120F", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Inter', sans-serif" },
   container: { maxWidth: 640, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 },
-  eyebrow: { fontSize: 12, color: "#8B5FBF", letterSpacing: "0.02em", marginBottom: 2 },
-  title: { fontFamily: "'Bitter', serif", fontWeight: 700, fontSize: 26, color: "#EDE6D6", margin: 0 },
+  eyebrow: { fontSize: 12, color: "#B0A6D9", letterSpacing: "0.04em", marginBottom: 2, textTransform: "uppercase" },
+  title: { fontFamily: "'Bitter', serif", fontWeight: 700, fontSize: 26, color: "#EDEAE4", margin: 0 },
   metaBox: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 },
-  metaLabel: { fontSize: 10, color: "#6B6152" },
-  metaValue: { fontSize: 11, color: "#A89A82" },
-  logoutBtn: { fontSize: 11, color: "#C77B5A", background: "none", border: "1px solid #3A3226", padding: "3px 8px", cursor: "pointer" },
-  clockTower: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#A89A82", border: "1px solid #3A3226", background: "#1E1912", padding: "6px 10px", marginBottom: 10 },
-  statsBar: { display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #3A3226", paddingBottom: 12, marginBottom: 4 },
+  metaLabel: { fontSize: 10, color: "#6E6A62" },
+  metaValue: { fontSize: 11, color: "#A7A29A" },
+  logoutBtn: { fontSize: 11, color: "#C7A661", background: "none", border: "1px solid #39352E", padding: "3px 8px", cursor: "pointer" },
+  clockTower: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#A7A29A", border: "1px solid #39352E", background: "#201D19", padding: "6px 10px", marginBottom: 10 },
+  statsBar: { display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #39352E", paddingBottom: 12, marginBottom: 4 },
   statText: { fontSize: 13 },
   builderStat: { display: "flex", alignItems: "center", gap: 4, fontSize: 13 },
   builderInput: { width: 30, textAlign: "center", padding: "2px 4px", fontSize: 13 },
-  readyPill: { fontSize: 12, color: "#6FAE68", border: "1px solid #3B4A36", background: "#1C231A", padding: "3px 8px" },
+  readyPill: { fontSize: 12, color: "#1B1712", border: "1px solid #C7A661", background: "#C7A661", padding: "3px 8px", fontWeight: 600 },
   filterRow: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 },
-  filterChip: { fontSize: 11, color: "#A89A82", background: "#1E1912", border: "1px solid #3A3226", padding: "4px 9px", cursor: "pointer" },
-  filterChipActive: { color: "#EDE6D6", borderColor: "#D9A441" },
-  tagRemoveBtn: { fontSize: 12, color: "#6B6152", background: "none", border: "none", cursor: "pointer", padding: "0 2px" },
-  copyBtn: { marginTop: 14, width: "100%", background: "#1E1912", border: "1px solid #3A3226", color: "#A89A82", padding: "9px 0", fontSize: 12, cursor: "pointer" },
-  reminderBox: { marginTop: 10, border: "1px solid #3A3226", padding: 12, background: "#1B160F" },
+  filterChip: { fontSize: 11, color: "#A7A29A", background: "#201D19", border: "1px solid #39352E", padding: "4px 9px", cursor: "pointer" },
+  filterChipActive: { color: "#1B1712", background: "#C7A661", borderColor: "#C7A661" },
+  tagRemoveBtn: { fontSize: 12, color: "#6E6A62", background: "none", border: "none", cursor: "pointer", padding: "0 2px" },
+  copyBtn: { marginTop: 14, width: "100%", background: "#201D19", border: "1px solid #39352E", color: "#A7A29A", padding: "9px 0", fontSize: 12, cursor: "pointer" },
+  reminderBox: { marginTop: 10, border: "1px solid #39352E", padding: 12, background: "#1C1916" },
   list: { marginTop: 8 },
-  empty: { color: "#6B6152", fontSize: 13, padding: "24px 4px", textAlign: "center", fontStyle: "italic" },
-  row: { display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", borderBottom: "1px solid #26211A" },
+  empty: { color: "#6E6A62", fontSize: 13, padding: "24px 4px", textAlign: "center", fontStyle: "italic" },
+  row: { display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", borderBottom: "1px solid #282420" },
   catPill: { fontSize: 10, border: "1px solid", padding: "3px 6px", whiteSpace: "nowrap", minWidth: 64, textAlign: "center" },
   rowMain: { flex: 1, minWidth: 0 },
   rowTop: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 },
-  rowName: { fontSize: 14, color: "#EDE6D6", fontWeight: 600, cursor: "pointer" },
-  rowLevel: { fontSize: 12, color: "#8B5FBF", whiteSpace: "nowrap" },
-  rowBottom: { fontSize: 11, color: "#6B6152" },
+  rowName: { fontSize: 14, color: "#EDEAE4", fontWeight: 600, cursor: "pointer" },
+  rowLevel: { fontSize: 12, color: "#B0A6D9", whiteSpace: "nowrap" },
+  rowMaxLevel: { fontSize: 12, color: "#8A857C", whiteSpace: "nowrap", cursor: "pointer" },
+  rowBottom: { fontSize: 11, color: "#6E6A62" },
   rowRight: { display: "flex", alignItems: "center" },
   countdown: { fontVariantNumeric: "tabular-nums", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" },
-  importTrigger: { marginTop: 16, width: "100%", background: "#D9A441", color: "#17140F", border: "none", padding: "10px 0", fontWeight: 600, fontSize: 13, cursor: "pointer" },
-  importBox: { marginTop: 10, border: "1px solid #3A3226", padding: 14, background: "#1B160F" },
-  importHint: { fontSize: 11, color: "#A89A82", marginBottom: 8, lineHeight: 1.5 },
-  errorText: { color: "#C77B5A", fontSize: 12, margin: "8px 0" },
+  importTrigger: { marginTop: 16, width: "100%", background: "#C7A661", color: "#1B1712", border: "none", padding: "10px 0", fontWeight: 600, fontSize: 13, cursor: "pointer" },
+  importBox: { marginTop: 10, border: "1px solid #39352E", padding: 14, background: "#1C1916" },
+  importHint: { fontSize: 11, color: "#A7A29A", marginBottom: 8, lineHeight: 1.5 },
+  errorText: { color: "#D9A88A", fontSize: 12, margin: "8px 0", border: "1px solid #4A3D33", padding: "5px 8px" },
   formActions: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 },
-  cancelBtn: { background: "#1E1912", border: "1px solid #3A3226", color: "#A89A82", padding: "8px 14px", fontSize: 13, cursor: "pointer" },
-  submitBtn: { border: "none", padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#17140F", background: "#D9A441" },
-  footnote: { marginTop: 14, fontSize: 11, color: "#6B6152", lineHeight: 1.5 },
+  cancelBtn: { background: "#201D19", border: "1px solid #39352E", color: "#A7A29A", padding: "8px 14px", fontSize: 13, cursor: "pointer" },
+  submitBtn: { border: "none", padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#1B1712", background: "#C7A661" },
+  footnote: { marginTop: 14, fontSize: 11, color: "#6E6A62", lineHeight: 1.5 },
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
