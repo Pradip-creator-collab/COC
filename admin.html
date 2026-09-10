@@ -23,6 +23,15 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect } = React;
 
+if (!window.__auth || !window.__db) {
+  document.getElementById("root").innerHTML =
+    '<div style="color:#EDEAE4;padding:24px;font-family:sans-serif;max-width:400px;margin:60px auto;background:#1C1916;border:1px solid #39352E;">' +
+    "Couldn't connect (Firebase didn't load). Check your internet connection and reload the page. " +
+    "If this keeps happening, shared.js or the Firebase scripts may not be loading correctly." +
+    "</div>";
+  throw new Error("Firebase failed to initialize — window.__auth/__db missing.");
+}
+
 function AdminPanel({ myUid, onSelectUser, onBack }) {
   const [users, setUsers] = useState(null);
   const [error, setError] = useState("");

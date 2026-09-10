@@ -20,10 +20,12 @@ window.__auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(funct
 
 // ======================================================================
 // Shared game data — edit here and it applies to every page.
+// Explicitly attached to `window` so every page can see them for certain,
+// regardless of how each page's script is loaded/transformed.
 // ======================================================================
-const BUILDER_CATEGORIES = ["buildings", "buildings2", "traps", "traps2"];
+window.BUILDER_CATEGORIES = ["buildings", "buildings2", "traps", "traps2"];
 
-const CATEGORY_MAP = {
+window.CATEGORY_MAP = {
   buildings: { label: "Building", color: "#5FB0E0" },
   buildings2: { label: "Building (Builder Base)", color: "#5FB0E0" },
   traps: { label: "Trap", color: "#B44B4B" },
@@ -40,7 +42,7 @@ const CATEGORY_MAP = {
 
 // Built-in fallback names for known internal IDs (from a verified code->name list).
 // A per-item custom name in nameMap always takes priority over this.
-const DEFAULT_NAMES = {
+const DEFAULT_NAMES = window.DEFAULT_NAMES = {
   "1000000": "Army Camp", "1000001": "Town Hall", "1000002": "Elixir Collector",
   "1000003": "Elixir Storage", "1000004": "Gold Mine", "1000005": "Gold Storage",
   "1000006": "Barracks", "1000007": "Laboratory", "1000009": "Archer Tower",
