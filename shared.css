@@ -15,10 +15,18 @@ html, body {
 }
 #root { min-height: 100vh; }
 textarea, input {
-  background: #201D19; border: 1px solid #39352E; color: #EDEAE4;
-  padding: 8px 10px; font-family: 'Inter', sans-serif; font-size: 13px; outline: none;
+  background: transparent; 
+  border: 1px solid #cbcbcb; 
+  color: #4a4a4a;
+  padding: 8px 10px; 
+  font-family: 'Inter', sans-serif; 
+  font-size: 13px; 
+  outline: none;
   transition: border-color 0.15s ease;
 }
+textarea:focus, input:focus { border-color: #6d8196; }
+textarea::placeholder, input::placeholder { color: #6d8196; opacity: 0.8; }
+
 textarea:focus, input:focus { border-color: #5FB0E0; }
 textarea::placeholder, input::placeholder { color: #6E6A62; }
 button { transition: transform 0.12s ease, opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease; }
