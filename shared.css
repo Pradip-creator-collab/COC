@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Bitter:wght@600;700&family=Inter:wght@400;500;600&display=swap');
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(135deg, #F2F0EA, #A8D5E3, #D9AFC9, #FF78AC, #F2F0EA);
+  background-size: 300% 300%;
+  animation: waveShift 20s ease-in-out infinite;
+}
+@keyframes waveShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+#root { min-height: 100vh; }
+textarea, input {
+  background: #201D19; border: 1px solid #39352E; color: #EDEAE4;
+  padding: 8px 10px; font-family: 'Inter', sans-serif; font-size: 13px; outline: none;
+  transition: border-color 0.15s ease;
+}
+textarea:focus, input:focus { border-color: #5FB0E0; }
+textarea::placeholder, input::placeholder { color: #6E6A62; }
+button { transition: transform 0.12s ease, opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease; }
+button:active { transform: scale(0.96); }
+.row { animation: fade 0.35s ease; }
+@keyframes fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulseRedText { 0%, 100% { color: #E08A8A; } 50% { color: #B44B4B; } }
+@keyframes pulseRedBg { 0%, 100% { background: #B44B4B; } 50% { background: #E08A8A; } }
+@keyframes shimmer { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.pulse-ready { animation: pulseRedText 1.6s ease-in-out infinite; }
+.pulse-ready-bg { animation: pulseRedBg 1.6s ease-in-out infinite; }
+.syncing { animation: shimmer 1.2s ease-in-out infinite; }
+.panel-in { animation: slideIn 0.25s ease; }
+.btn:hover { background: #8FCBEA !important; }
+.name:hover { color: #5FB0E0 !important; cursor: pointer; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  html, body { animation: none; }
+  .row, .pulse-ready, .pulse-ready-bg, .syncing, .panel-in { animation: none; }
+  button:active { transform: none; }
+}

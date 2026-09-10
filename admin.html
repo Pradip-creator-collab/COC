@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clash of Clans — Admin</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-auth-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-firestore-compat.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script src="shared.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+function AdminPanel({ myUid, onSelectUser, onBack }) {
+  const [users, setUsers] = useState(null);
+  const [error, setError] = useState("");
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editNameValue, setEditNameValue] = useState("");
+
+  useEffect(() => {
+    window.__db.collection("users").get().then((snap) => {
+      const list = [];
+      snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      setUsers(list);
+    }).catch((e) => setError(e.message || "Couldn't load users."));
+  }, []);
+
+  const startEditName = (u) => { setEditingUserId(u.id); setEditNameValue(u.username || ""); };
+  const commitEditName = (userId) => {
+    const newName = editNameValue.trim();
+    setEditingUserId(null);
+    if (!newName) return;
+    window.__db.collection("users").doc(userId).set({ username: newName }, { merge: true })
+      .then(() => setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, username: newName } : u))))
+      .catch((e) => setError(e.message || "Couldn't update that username."));
+  };
+
+  const deleteUser = (u) => {
+    const ok = window.confirm(`Delete ${u.username || u.id}'s tracked data? This can't be undone. Their login will still exist, but their imported villages, nicknames, and settings will be wiped.`);
+    if (!ok) return;
+    window.__db.collection("users").doc(u.id).delete()
+      .then(() => setUsers((prev) => prev.filter((x) => x.id !== u.id)))
+      .catch((e) => setError(e.message || "Couldn't delete that user."));
+  };
+
+  return (
+    <div style={s.wrapper}>
+      <div style={s.container}>
+        <div style={s.header}>
+          <div>
+            <div style={s.eyebrow}>Admin</div>
+            <h1 style={s.title}>All Players</h1>
+          </div>
+          <button onClick={onBack} style={s.logoutBtn}>Back to my dashboard</button>
+        </div>
+        {error && <div style={s.errorText}>{error}</div>}
+        {!users && !error && <div style={s.empty}>Loading users…</div>}
+        {users && users.length === 0 && <div style={s.empty}>No users yet.</div>}
+        <div style={s.list}>
+          {users && users.map((u) => (
+            <div key={u.id} className="row" style={s.row}>
+              <div style={s.rowMain}>
+                <div style={s.rowTop}>
+                  {editingUserId === u.id ? (
+                    <input
+                      autoFocus
+                      value={editNameValue}
+                      onChange={(e) => setEditNameValue(e.target.value)}
+                      onBlur={() => commitEditName(u.id)}
+                      onKeyDown={(e) => e.key === "Enter" && commitEditName(u.id)}
+                      style={{ width: 160 }}
+                    />
+                  ) : (
+                    <span className="name" style={s.rowName} onClick={() => startEditName(u)} title="Click to edit this player's display nickname">
+                      {u.username || u.id} ✎
+                    </span>
+                  )}
+                  {u.role === "admin" && <span style={s.rowLevel}>admin</span>}
+                </div>
+                <div style={s.rowBottom}>
+                  {u.villages && Object.keys(u.villages).length > 0
+                    ? `${Object.keys(u.villages).length} village(s), ${Object.values(u.villages).reduce((sum, v) => sum + ((v.snapshot && v.snapshot.items.length) || 0), 0)} upgrades tracked`
+                    : "No village data imported yet"}
+                </div>
+              </div>
+              {u.id !== myUid && (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => onSelectUser(u.id, u.username)} style={s.logoutBtn}>View</button>
+                  <button onClick={() => deleteUser(u)} style={s.deleteBtn}>Delete</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={s.footnote}>The name shown here is a display nickname only — it does NOT change what a player types to log in. Every player's login username is fixed at signup and can't be changed by admin (same as passwords: never viewable, and not changeable for another account from here).</div>
+      </div>
+    </div>
+  );
+}
+
+function Boot() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState("member");
+
+  useEffect(() => {
+    const unsub = window.__auth.onAuthStateChanged(async (u) => {
+      setUser(u);
+      if (u) {
+        try {
+          const snap = await window.__db.collection("users").doc(u.uid).get();
+          const d = snap.data() || {};
+          setRole(d.role === "admin" ? "admin" : "member");
+        } catch (e) {}
+      }
+      setAuthChecked(true);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!user) { window.location.href = "index.html"; return; }
+    if (role !== "admin") { window.location.href = "coc-upgrade.html"; }
+  }, [authChecked, user, role]);
+
+  if (!authChecked || !user || role !== "admin") return <div style={s.wrapper}></div>;
+
+  return (
+    <AdminPanel
+      myUid={user.uid}
+      onBack={() => { window.location.href = "coc-upgrade.html"; }}
+      onSelectUser={(uid, name) => {
+        window.location.href = `coc-upgrade.html?viewUid=${encodeURIComponent(uid)}&viewName=${encodeURIComponent(name || uid)}`;
+      }}
+    />
+  );
+}
+
+const s = {
+  wrapper: { background: "transparent", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Inter', sans-serif" },
+  container: { maxWidth: 640, margin: "0 auto" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 },
+  eyebrow: { fontSize: 12, color: "#5FB0E0", letterSpacing: "0.04em", marginBottom: 2, textTransform: "uppercase" },
+  title: { fontFamily: "'Bitter', serif", fontWeight: 700, fontSize: 26, color: "#EDEAE4", margin: 0 },
+  logoutBtn: { fontSize: 11, color: "#5FB0E0", background: "none", border: "1px solid #39352E", padding: "3px 8px", cursor: "pointer" },
+  deleteBtn: { fontSize: 11, color: "#E08A8A", background: "none", border: "1px solid #5A3232", padding: "3px 8px", cursor: "pointer" },
+  list: { marginTop: 8 },
+  empty: { color: "#6E6A62", fontSize: 13, padding: "24px 4px", textAlign: "center", fontStyle: "italic" },
+  row: { display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", borderBottom: "1px solid #282420" },
+  rowMain: { flex: 1, minWidth: 0 },
+  rowTop: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 },
+  rowName: { fontSize: 14, color: "#EDEAE4", fontWeight: 600, cursor: "pointer" },
+  rowLevel: { fontSize: 12, color: "#8FCBEA", whiteSpace: "nowrap" },
+  rowBottom: { fontSize: 11, color: "#6E6A62" },
+  errorText: { color: "#E08A8A", fontSize: 12, margin: "8px 0", border: "1px solid #5A3232", padding: "5px 8px" },
+  footnote: { marginTop: 14, fontSize: 11, color: "#6E6A62", lineHeight: 1.5 },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Boot />);
+</script>
+</body>
+</html>
