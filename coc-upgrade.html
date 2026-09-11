@@ -235,7 +235,7 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
     }
   }, [currentPassword, newPassword, confirmPassword]);
 
-  return (
+         return (
     <div style={s.wrapper}>
       <div style={s.container}>
         <div style={s.header}>
@@ -243,19 +243,19 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
             <div style={s.eyebrow}>{readOnly ? `Viewing (read-only)` : "Village Import"}</div>
             <h1 style={s.title}>{readOnly ? viewingLabel : "Upgrade Watch"}</h1>
           </div>
-                    <div style={s.metaBox}>
+          <div style={s.metaBox}>
             <span className={syncState === "saving" ? "syncing" : ""} style={s.metaValue}>{readOnly ? "" : syncState === "saving" ? "Syncing…" : "Synced ☁"}</span>
             {isAdmin && !readOnly && <button onClick={onOpenAdmin} style={s.logoutBtn}>Admin panel</button>}
             {!readOnly && <button onClick={() => setPwOpen((o) => !o)} style={s.logoutBtn}>Change password</button>}
             
-            {/* View Base & Logout Button ek sathe pashapashi */}
+            {/* View Base & Logout Button */}
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button onClick={() => window.location.href = "view-base.html"} style={s.viewBaseBtn}>🔍 View Base</button>
               <button onClick={onLogout} style={s.logoutBtn}>{readOnly ? "Back" : "Log out"}</button>
             </div>
           </div>
-
-        {!readOnly && pwOpen && (
+        </div>
+      {!readOnly && pwOpen && (
           <div className="panel-in" style={s.importBox}>
             <div style={s.importHint}>Enter your current password, then your new one.</div>
             <input
@@ -418,9 +418,8 @@ function Tracker({ uid, readOnly, isAdmin, viewingLabel, onOpenAdmin, onLogout }
                   </div>
                   <div style={s.rowBottom}>finishes {formatClockTime(it.completionMs)}</div>
                 </div>
-                <div style={s.rowRight}><span className={isReady ? "pulse-ready" : ""} style={{ ...s.countdown, 
- "#BE123C" : "#000000" }}>{formatRemaining(remaining)}</span></div>
-              </div>
+                <div style={s.rowRight}><span className={isReady ? "pulse-ready" : ""} style={{ ...s.countdown, color: isReady ? "#BE123C" : "#000000" }}>{formatRemaining(remaining)}</span></div>
+           </div>
             );
           })}
         </div>
