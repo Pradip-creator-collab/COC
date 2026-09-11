@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>View Base — Clash of Clans</title>
+<title>View Base — Upgrade Watch</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="shared.css">
 <style>
-  textarea, input { 
+  textarea, input {
     font-family: 'Times New Roman', Times, serif !important;
-    background: rgba(255, 255, 255, 0.4) !important; 
-    border: 1px solid rgba(255, 255, 255, 0.7) !important; 
-    color: #1F2937 !important; 
+    background: rgba(255, 255, 255, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    color: #1F2937 !important;
     border-radius: 10px !important;
     font-weight: 600;
     box-shadow: inset 0 2px 6px rgba(0,0,0,0.02);
   }
-  textarea:focus, input:focus { 
-    border-color: rgba(255, 255, 255, 1) !important; 
+  textarea:focus, input:focus {
+    border-color: rgba(255, 255, 255, 1) !important;
     background: rgba(255, 255, 255, 0.7) !important;
     box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3) !important;
   }
@@ -27,119 +27,187 @@
 <body>
 <div id="root"></div>
 
-<!-- React Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-auth-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.18.0/firebase-firestore-compat.min.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 
+<script src="shared.js"></script>
+
 <script type="text/babel" data-presets="react">
-const { useState } = React;
+const { useState, useEffect, useMemo } = React;
 
-function ViewBase() {
-  const [tag, setTag] = useState("");
-  const [playerData, setPlayerData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+if (!window.__auth || !window.__db) {
+  document.getElementById("root").innerHTML =
+    '<div style="color:#EDEAE4;padding:24px;font-family:sans-serif;max-width:400px;margin:60px auto;background:#1C1916;border:1px solid #39352E;">' +
+    "Couldn't connect (Firebase didn't load). Check your internet connection and reload the page. " +
+    "If this keeps happening, shared.js or the Firebase scripts may not be loading correctly." +
+    "</div>";
+  throw new Error("Firebase failed to initialize — window.__auth/__db missing.");
+}
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!tag.trim()) return;
-    setLoading(true);
-    setError("");
-    setPlayerData(null);
+// Order + display titles for each profile section.
+const SECTIONS = [
+  { key: "heroes", title: "Heroes" },
+  { key: "heroes2", title: "Heroes (Builder Base)" },
+  { key: "pets", title: "Pets" },
+  { key: "units", title: "Troops (Lab)" },
+  { key: "units2", title: "Troops (Builder Base Lab)" },
+  { key: "spells", title: "Spells (Lab)" },
+  { key: "siege_machines", title: "Siege Machines" },
+  { key: "guardians", title: "Guardians" },
+  { key: "buildings", title: "Buildings" },
+  { key: "buildings2", title: "Buildings (Builder Base)" },
+  { key: "traps", title: "Traps" },
+  { key: "traps2", title: "Traps (Builder Base)" },
+];
 
-    // Demo Data
-    setTimeout(() => {
-      if(tag === "#ERROR") {
-        setError("Player not found. Please check the tag.");
-      } else {
-        setPlayerData({
-          name: "Gaming King",
-          tag: tag.toUpperCase(),
-          townHallLevel: 15,
-          clan: { name: "Warriors Elite" },
-          heroes: [
-            { name: "Barbarian King", level: 85, maxLevel: 90 },
-            { name: "Archer Queen", level: 90, maxLevel: 90 },
-            { name: "Grand Warden", level: 60, maxLevel: 65 }
-          ],
-          pets: [
-            { name: "L.A.S.S.I", level: 10, maxLevel: 10 },
-            { name: "Mighty Yak", level: 8, maxLevel: 10 }
-          ],
-          troops: [
-            { name: "Barbarian", level: 11, maxLevel: 11 },
-            { name: "Archer", level: 11, maxLevel: 11 },
-            { name: "Dragon", level: 9, maxLevel: 10 }
-          ]
-        });
+function normalizeTag(t) {
+  let s = (t || "").trim().toUpperCase().replace(/\s+/g, "").replace(/^#*/, "");
+  return s ? "#" + s : "";
+}
+
+function itemName(id, nameMap) {
+  return (nameMap && nameMap[id]) || DEFAULT_NAMES[String(id)] || `#${id}`;
+}
+
+function BaseProfile({ uid, readOnly, viewingLabel, onBack, onLogout }) {
+  const [villages, setVillages] = useState({});
+  const [nameMap, setNameMap] = useState({});
+  const [maxLevelMap, setMaxLevelMap] = useState({});
+  const [loaded, setLoaded] = useState(false);
+  const [tagInput, setTagInput] = useState("");
+  const [searchedTag, setSearchedTag] = useState(null);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.__db.collection("users").doc(uid).get().then((snap) => {
+      if (cancelled) return;
+      const d = snap.data() || {};
+      let v = d.villages || {};
+      if (Object.keys(v).length === 0 && d.snapshot) {
+        const legacyTag = d.snapshot.tag || "main";
+        v = { [legacyTag]: { snapshot: d.snapshot, totalBuilders: d.totalBuilders || 6, label: legacyTag } };
       }
-      setLoading(false);
-    }, 1000); 
+      setVillages(v);
+      if (d.nameMap) setNameMap(d.nameMap);
+      if (d.maxLevelMap) setMaxLevelMap(d.maxLevelMap);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+    return () => { cancelled = true; };
+  }, [uid]);
+
+  const matchedEntry = useMemo(() => {
+    if (!searchedTag) return null;
+    const target = normalizeTag(searchedTag);
+    const key = Object.keys(villages).find((k) => {
+      const village = villages[k];
+      const candidate = (village.snapshot && village.snapshot.tag) || k;
+      return normalizeTag(candidate) === target || normalizeTag(k) === target;
+    });
+    return key ? { tag: key, village: villages[key] } : null;
+  }, [searchedTag, villages]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!tagInput.trim()) return;
+    setSearchedTag(tagInput.trim());
+    setNotFound(false);
   };
+
+  useEffect(() => {
+    if (searchedTag && loaded) setNotFound(!matchedEntry);
+  }, [searchedTag, matchedEntry, loaded]);
+
+  const levels = matchedEntry && matchedEntry.village.snapshot ? (matchedEntry.village.snapshot.levels || null) : null;
+  const townHallLvl = levels && levels.buildings ? (levels.buildings.find((it) => String(it.id) === "1000001") || {}).lvl : null;
+  const builderHallLvl = levels && levels.buildings2 ? (levels.buildings2.find((it) => String(it.id) === "1000034") || {}).lvl : null;
 
   return (
     <div style={s.wrapper}>
       <div style={s.container}>
         <div style={s.header}>
           <div>
-            <div style={s.eyebrow}>Player Search</div>
-            <h1 style={s.title}>View Base Stats</h1>
+            <div style={s.eyebrow}>{readOnly ? "Viewing (read-only)" : "Base Lookup"}</div>
+            <h1 style={s.title}>{readOnly ? viewingLabel : "View Base"}</h1>
           </div>
-          <button onClick={() => window.location.href = "coc-upgrade.html"} style={s.backBtn}>← Back to Tracker</button>
+          <div style={s.metaBox}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onBack} style={s.logoutBtn}>← Dashboard</button>
+              <button onClick={onLogout} style={s.logoutBtn}>{readOnly ? "Back" : "Log out"}</button>
+            </div>
+          </div>
         </div>
 
-        <form onSubmit={handleSearch} style={s.searchForm}>
-          <input 
-            placeholder="Enter Player Tag (e.g. #Y2LQ...)" 
-            value={tag} 
-            onChange={(e) => setTag(e.target.value)} 
-            style={s.input}
+        <form onSubmit={handleSubmit} style={s.searchRow}>
+          <input
+            type="text"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            placeholder="Enter player tag, e.g. #ABC123"
+            style={s.tagInput}
           />
-          <button type="submit" disabled={loading} style={s.searchBtn}>
-            {loading ? "Searching..." : "Search"}
-          </button>
+          <button type="submit" className="btn" style={s.submitBtn}>Submit</button>
         </form>
 
-        {error && <div style={s.errorText}>{error}</div>}
+        {!loaded && <div style={s.empty}>Loading your saved villages…</div>}
 
-        {playerData && (
-          <div style={s.profileCard}>
-            <div style={s.profileHeader}>
-              <h2 style={s.playerName}>{playerData.name} <span style={s.playerTag}>{playerData.tag}</span></h2>
-              <div style={s.playerTh}>TH {playerData.townHallLevel}</div>
+        {loaded && !searchedTag && (
+          <div style={s.footnote}>
+            Enter one of your tracked players' tags above and submit to see every hero, pet, troop and building level for that base.
+          </div>
+        )}
+
+        {loaded && searchedTag && notFound && (
+          <div style={s.errorText}>
+            Couldn't find a saved village with that tag. Make sure it matches a village you've already imported on the dashboard, then re-import its Export Village Data JSON if you haven't recently.
+          </div>
+        )}
+
+        {loaded && matchedEntry && !levels && (
+          <div style={s.errorText}>
+            This village doesn't have full profile data cached yet. Go to the dashboard and re-import that village's Export Village Data JSON once to enable View Base for it.
+          </div>
+        )}
+
+        {loaded && matchedEntry && levels && (
+          <div className="panel-in">
+            <div style={s.profileHead}>
+              <div style={s.profileName}>{matchedEntry.village.label || matchedEntry.tag}</div>
+              <div style={s.profileTag}>{matchedEntry.tag}</div>
+              <div style={s.hallRow}>
+                {townHallLvl != null && <span style={s.hallPill}>Town Hall {townHallLvl}</span>}
+                {builderHallLvl != null && <span style={s.hallPill}>Builder Hall {builderHallLvl}</span>}
+              </div>
             </div>
-            {playerData.clan && <div style={s.clanName}>🛡️ Clan: {playerData.clan.name}</div>}
 
-            <h3 style={s.sectionTitle}>Heroes</h3>
-            <div style={s.grid}>
-              {playerData.heroes.map((h, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{h.name}</div>
-                  <div style={s.itemLevel}>Lv {h.level} / <span style={s.maxText}>{h.maxLevel}</span></div>
+            {SECTIONS.map(({ key, title }) => {
+              const list = levels[key];
+              if (!list || !list.length) return null;
+              const sorted = [...list].sort((a, b) =>
+                itemName(a.id, nameMap).localeCompare(itemName(b.id, nameMap))
+              );
+              return (
+                <div key={key} style={s.section}>
+                  <div style={s.sectionTitle}>{title}</div>
+                  <div style={s.grid}>
+                    {sorted.map((it) => (
+                      <div key={key + "-" + it.id} style={s.itemCard}>
+                        <div style={s.itemName}>{itemName(it.id, nameMap)}</div>
+                        <div style={s.itemLevel}>
+                          Lv {it.lvl}
+                          {maxLevelMap[it.id] ? <span style={s.itemMax}> / {maxLevelMap[it.id]}</span> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            <h3 style={s.sectionTitle}>Pets</h3>
-            <div style={s.grid}>
-              {playerData.pets.map((p, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{p.name}</div>
-                  <div style={s.itemLevel}>Lv {p.level} / <span style={s.maxText}>{p.maxLevel}</span></div>
-                </div>
-              ))}
-            </div>
-
-            <h3 style={s.sectionTitle}>Troops (Top)</h3>
-            <div style={s.grid}>
-              {playerData.troops.map((t, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{t.name}</div>
-                  <div style={s.itemLevel}>Lv {t.level} / <span style={s.maxText}>{t.maxLevel}</span></div>
-                </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -147,109 +215,111 @@ function ViewBase() {
   );
 }
 
+function Boot() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState("member");
+  const params = new URLSearchParams(window.location.search);
+  const viewUid = params.get("viewUid");
+  const viewName = params.get("viewName");
+
+  useEffect(() => {
+    const unsub = window.__auth.onAuthStateChanged(async (u) => {
+      setUser(u);
+      if (u) {
+        try {
+          const snap = await window.__db.collection("users").doc(u.uid).get();
+          const d = snap.data() || {};
+          setRole(d.role === "admin" ? "admin" : "member");
+        } catch (e) {}
+      }
+      setAuthChecked(true);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (authChecked && !user) window.location.href = "index.html";
+  }, [authChecked, user]);
+
+  if (!authChecked || !user) return <div style={s.wrapper}></div>;
+
+  if (viewUid && role === "admin") {
+    return (
+      <BaseProfile
+        uid={viewUid}
+        readOnly={true}
+        viewingLabel={viewName || viewUid}
+        onBack={() => { window.location.href = "admin.html"; }}
+        onLogout={() => { window.location.href = "admin.html"; }}
+      />
+    );
+  }
+
+  return (
+    <BaseProfile
+      uid={user.uid}
+      readOnly={false}
+      onBack={() => { window.location.href = "coc-upgrade.html"; }}
+      onLogout={() => window.__auth.signOut().then(() => { window.location.href = "index.html"; })}
+    />
+  );
+}
+
 const s = {
   wrapper: { background: "transparent", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Times New Roman', Times, serif" },
   container: { maxWidth: 640, margin: "0 auto", background: "rgba(255, 255, 255, 0.45)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255, 255, 255, 0.7)", padding: 28, borderRadius: 20, boxShadow: "0 12px 40px rgba(168, 213, 227, 0.25)" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 },
   eyebrow: { fontSize: 13, color: "#6B7280", letterSpacing: "0.06em", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 },
   title: { fontFamily: "'Times New Roman', Times, serif", fontWeight: 700, fontSize: 30, color: "#1F2937", margin: 0 },
-  backBtn: { fontSize: 13, fontFamily: "'Times New Roman', Times, serif", color: "#4B5563", background: "rgba(255, 255, 255, 0.5)", border: "1px solid rgba(255, 255, 255, 0.8)", padding: "6px 14px", cursor: "pointer", borderRadius: 8, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" },
-  
-  searchForm: { display: "flex", gap: 10, marginBottom: 24 },
-  input: { flex: 1, padding: "10px 14px", fontSize: 15 },
-  searchBtn: { border: "1px solid rgba(255,255,255,1)", fontFamily: "'Times New Roman', Times, serif", padding: "10px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.06)", whiteSpace: "nowrap" },
-  
-  errorText: { color: "#BE123C", fontSize: 14, margin: "10px 0", border: "1px solid rgba(254, 205, 211, 0.8)", padding: "8px 12px", background: "rgba(255, 228, 230, 0.8)", borderRadius: 8, fontWeight: 700 },
-  
-  profileCard: { background: "rgba(255, 255, 255, 0.3)", border: "1px solid rgba(255, 255, 255, 0.5)", padding: 20, borderRadius: 16 },
-  profileHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.6)", paddingBottom: 10, marginBottom: 10 },
-  playerName: { margin: 0, fontSize: 22, color: "#1F2937", fontWeight: 700 },
-  playerTag: { fontSize: 14, color: "#6B7280", fontWeight: 700, marginLeft: 8 },
-  playerTh: { fontSize: 14, color: "#1F2937", background: "#A8D5E3", padding: "4px 10px", borderRadius: 12, fontWeight: 700 },
-  clanName: { fontSize: 15, color: "#4B5563", fontWeight: 700, marginBottom: 20 },
-  
-  sectionTitle: { fontSize: 18, color: "#1F2937", margin: "0 0 12px 0", borderBottom: "1px dashed rgba(255,255,255,0.8)", paddingBottom: 6 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 20 },
-  itemBox: { background: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.9)", padding: "10px", borderRadius: 10, textAlign: "center" },
-  itemName: { fontSize: 15, color: "#1F2937", fontWeight: 700, marginBottom: 4 },
-  itemLevel: { fontSize: 13, color: "#4B5563", fontWeight: 700 },
-  maxText: { color: "#9CA3AF" },
-};
+  metaBox: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 },
+  logoutBtn: { fontSize: 13, fontFamily: "'Times New Roman', Times, serif", color: "#4B5563", background: "rgba(255, 255, 255, 0.5)", border: "1px solid rgba(255, 255, 255, 0.8)", padding: "6px 14px", cursor: "pointer", borderRadius: 8, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", whiteSpace: "nowrap" },
 
-ReactDOM.createRoot(document.getElementById("root")).render(<ViewBase />);
+  searchRow: { display: "flex", gap: 10, marginBottom: 20 },
+  tagInput: { flex: 1, padding: "10px 14px", fontSize: 15 },
+  submitBtn: { border: "1px solid rgba(255,255,255,1)", fontFamily: "'Times New Roman', Times, serif", padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", color: "#374151", background: "rgba(255, 255, 255, 0.8)", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" },
+
+  empty: { color: "#6B7280", fontSize: 15, padding: "32px 4px", textAlign: "center", fontStyle: "italic", fontWeight: 700 },
+  footnote: { marginTop: 8, fontSize: 13, color: "#6B7280", lineHeight: 1.6, textAlign: "center", fontWeight: 700 },
+  errorText: { color: "#BE123C", fontSize: 14, margin: "10px 0", border: "1px solid rgba(254, 205, 211, 0.8)", padding: "10px 14px", background: "rgba(255, 228, 230, 0.8)", borderRadius: 8, fontWeight: 700, lineHeight: 1.5 },
+
+  profileHead: { textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.6)", paddingBottom: 16, marginBottom: 10 },
+  profileName: { fontSize: 22, fontWeight: 700, color: "#1F2937" },
+  profileTag: { fontSize: 13, color: "#6B7280", fontWeight: 700, marginTop: 2 },
+  hallRow: { display: "flex", justifyContent: "center", gap: 8, marginTop: 10 },
+  hallPill: { fontSize: 13, color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", border: "1px solid #A8D5E3", padding: "5px 14px", fontWeight: 700, borderRadius: 16, boxShadow: "0 2px 10px rgba(168, 213, 227, 0.4)" },
+
+  section: { marginTop: 18 },
+  sectionTitle: { fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em", opacity: 0.75 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 },
+  itemCard: { border: "1px solid rgba(255,255,255,0.6)", background: "rgba(255, 255, 255, 0.35)", borderRadius: 10, padding: "8px 10px" },
+  itemName: { fontSize: 13, fontWeight: 700, color: "#1F2937", wordBreak: "break-word" },
+  itemLevel: { fontSize: 13, color: "#748CAB", fontWeight: 700, marginTop: 2 },
+  itemMax: { color: "#9CA3AF" },
+};
+ReactDOM.createRoot(document.getElementById("root")).render(<Boot />);
 </script>
-</body>
-</html>
-              <div style={s.playerTh}>TH {playerData.townHallLevel}</div>
-            </div>
-            {playerData.clan && <div style={s.clanName}>🛡️ Clan: {playerData.clan.name}</div>}
 
-            <h3 style={s.sectionTitle}>Heroes</h3>
-            <div style={s.grid}>
-              {playerData.heroes.map((h, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{h.name}</div>
-                  <div style={s.itemLevel}>Lv {h.level} / <span style={s.maxText}>{h.maxLevel}</span></div>
-                </div>
-              ))}
-            </div>
-
-            <h3 style={s.sectionTitle}>Pets</h3>
-            <div style={s.grid}>
-              {playerData.pets.map((p, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{p.name}</div>
-                  <div style={s.itemLevel}>Lv {p.level} / <span style={s.maxText}>{p.maxLevel}</span></div>
-                </div>
-              ))}
-            </div>
-
-            <h3 style={s.sectionTitle}>Troops (Top)</h3>
-            <div style={s.grid}>
-              {playerData.troops.map((t, i) => (
-                <div key={i} style={s.itemBox}>
-                  <div style={s.itemName}>{t.name}</div>
-                  <div style={s.itemLevel}>Lv {t.level} / <span style={s.maxText}>{t.maxLevel}</span></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const s = {
-  wrapper: { background: "transparent", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Times New Roman', Times, serif" },
-  container: { maxWidth: 640, margin: "0 auto", background: "rgba(255, 255, 255, 0.45)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255, 255, 255, 0.7)", padding: 28, borderRadius: 20, boxShadow: "0 12px 40px rgba(168, 213, 227, 0.25)" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 },
-  eyebrow: { fontSize: 13, color: "#6B7280", letterSpacing: "0.06em", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 },
-  title: { fontFamily: "'Times New Roman', Times, serif", fontWeight: 700, fontSize: 30, color: "#1F2937", margin: 0 },
-  backBtn: { fontSize: 13, fontFamily: "'Times New Roman', Times, serif", color: "#4B5563", background: "rgba(255, 255, 255, 0.5)", border: "1px solid rgba(255, 255, 255, 0.8)", padding: "6px 14px", cursor: "pointer", borderRadius: 8, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" },
-  
-  searchForm: { display: "flex", gap: 10, marginBottom: 24 },
-  input: { flex: 1, padding: "10px 14px", fontSize: 15 },
-  searchBtn: { border: "1px solid rgba(255,255,255,1)", fontFamily: "'Times New Roman', Times, serif", padding: "10px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.06)", whiteSpace: "nowrap" },
-  
-  errorText: { color: "#BE123C", fontSize: 14, margin: "10px 0", border: "1px solid rgba(254, 205, 211, 0.8)", padding: "8px 12px", background: "rgba(255, 228, 230, 0.8)", borderRadius: 8, fontWeight: 700 },
-  
-  profileCard: { background: "rgba(255, 255, 255, 0.3)", border: "1px solid rgba(255, 255, 255, 0.5)", padding: 20, borderRadius: 16 },
-  profileHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.6)", paddingBottom: 10, marginBottom: 10 },
-  playerName: { margin: 0, fontSize: 22, color: "#1F2937", fontWeight: 700 },
-  playerTag: { fontSize: 14, color: "#6B7280", fontWeight: 700, marginLeft: 8 },
-  playerTh: { fontSize: 14, color: "#1F2937", background: "#A8D5E3", padding: "4px 10px", borderRadius: 12, fontWeight: 700 },
-  clanName: { fontSize: 15, color: "#4B5563", fontWeight: 700, marginBottom: 20 },
-  
-  sectionTitle: { fontSize: 18, color: "#1F2937", margin: "0 0 12px 0", borderBottom: "1px dashed rgba(255,255,255,0.8)", paddingBottom: 6 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 20 },
-  itemBox: { background: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.9)", padding: "10px", borderRadius: 10, textAlign: "center" },
-  itemName: { fontSize: 15, color: "#1F2937", fontWeight: 700, marginBottom: 4 },
-  itemLevel: { fontSize: 13, color: "#4B5563", fontWeight: 700 },
-  maxText: { color: "#9CA3AF" },
-};
-
-ReactDOM.createRoot(document.getElementById("root")).render(<ViewBase />);
+<script>
+setTimeout(function () {
+  var root = document.getElementById("root");
+  if (root && root.children.length === 0) {
+    var lines = [
+      "firebase: " + typeof firebase,
+      "React: " + typeof React,
+      "ReactDOM: " + typeof ReactDOM,
+      "Babel: " + typeof Babel,
+      "window.__auth: " + typeof window.__auth,
+      "window.__db: " + typeof window.__db,
+      "window.CATEGORY_MAP: " + typeof window.CATEGORY_MAP,
+    ];
+    root.innerHTML =
+      '<div style="color:#EDEAE4;padding:24px;font-family:monospace;font-size:13px;max-width:420px;margin:60px auto;background:#1C1916;border:1px solid #39352E;line-height:1.6;">' +
+      "Diagnostic — nothing rendered after 2.5s:<br><br>" +
+      lines.join("<br>") +
+      "</div>";
+  }
+}, 2500);
 </script>
 </body>
 </html>

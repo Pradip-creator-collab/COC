@@ -142,10 +142,18 @@ function parseVillageJSON(raw) {
   const parsed = JSON.parse(raw);
   if (typeof parsed.timestamp !== "number") throw new Error("no timestamp");
   const items = [];
+  // `levels` captures EVERY hero/pet/troop/building entry (current level),
+  // not just the ones with an active upgrade timer — used by View Base
+  // to show a full profile snapshot.
+  const levels = {};
   Object.keys(CATEGORY_MAP).forEach((key) => {
     const arr = parsed[key];
     if (!Array.isArray(arr)) return;
+    const catLevels = [];
     arr.forEach((entry) => {
+      if (typeof entry.data !== "undefined" && typeof entry.lvl === "number") {
+        catLevels.push({ id: entry.data, lvl: entry.lvl });
+      }
       if (typeof entry.timer === "number") {
         items.push({
           category: key, id: entry.data, lvl: entry.lvl, timerSec: entry.timer,
@@ -154,10 +162,11 @@ function parseVillageJSON(raw) {
         });
       }
     });
+    if (catLevels.length) levels[key] = catLevels;
   });
   let clockTowerReadyMs = null;
   if (parsed.boosts && typeof parsed.boosts.clocktower_cooldown === "number") {
     clockTowerReadyMs = (parsed.timestamp + parsed.boosts.clocktower_cooldown) * 1000;
   }
-  return { importedAt: Date.now(), items, clockTowerReadyMs, tag: parsed.tag || "" };
+  return { importedAt: Date.now(), items, levels, clockTowerReadyMs, tag: parsed.tag || "" };
 }
