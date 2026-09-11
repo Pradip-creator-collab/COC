@@ -82,6 +82,7 @@ function BaseProfile({ uid, readOnly, viewingLabel, onBack, onLogout }) {
   const [tagInput, setTagInput] = useState("");
   const [searchedTag, setSearchedTag] = useState(null);
   const [notFound, setNotFound] = useState(false);
+  const [activeFilter, setActiveFilter] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +118,7 @@ function BaseProfile({ uid, readOnly, viewingLabel, onBack, onLogout }) {
     if (!tagInput.trim()) return;
     setSearchedTag(tagInput.trim());
     setNotFound(false);
+    setActiveFilter(null);
   };
 
   useEffect(() => {
@@ -124,8 +126,6 @@ function BaseProfile({ uid, readOnly, viewingLabel, onBack, onLogout }) {
   }, [searchedTag, matchedEntry, loaded]);
 
   const levels = matchedEntry && matchedEntry.village.snapshot ? (matchedEntry.village.snapshot.levels || null) : null;
-  const townHallLvl = levels && levels.buildings ? (levels.buildings.find((it) => String(it.id) === "1000001") || {}).lvl : null;
-  const builderHallLvl = levels && levels.buildings2 ? (levels.buildings2.find((it) => String(it.id) === "1000034") || {}).lvl : null;
 
   return (
     <div style={s.wrapper}>
@@ -179,18 +179,32 @@ function BaseProfile({ uid, readOnly, viewingLabel, onBack, onLogout }) {
             <div style={s.profileHead}>
               <div style={s.profileName}>{matchedEntry.village.label || matchedEntry.tag}</div>
               <div style={s.profileTag}>{matchedEntry.tag}</div>
-              <div style={s.hallRow}>
-                {townHallLvl != null && <span style={s.hallPill}>Town Hall {townHallLvl}</span>}
-                {builderHallLvl != null && <span style={s.hallPill}>Builder Hall {builderHallLvl}</span>}
-              </div>
             </div>
 
+            {/* Category Filters */}
+            <div style={s.filterRow}>
+              <button onClick={() => setActiveFilter(null)} style={{ ...s.filterChip, ...(activeFilter === null ? s.filterChipActive : {}) }}>All</button>
+              {SECTIONS.map(({ key, title }) => {
+                if (!levels[key] || !levels[key].length) return null;
+                return (
+                  <button key={key} onClick={() => setActiveFilter(key)} style={{ ...s.filterChip, ...(activeFilter === key ? s.filterChipActive : {}) }}>
+                    {title}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Items List */}
             {SECTIONS.map(({ key, title }) => {
+              if (activeFilter && activeFilter !== key) return null;
+              
               const list = levels[key];
               if (!list || !list.length) return null;
+              
               const sorted = [...list].sort((a, b) =>
                 itemName(a.id, nameMap).localeCompare(itemName(b.id, nameMap))
               );
+              
               return (
                 <div key={key} style={s.section}>
                   <div style={s.sectionTitle}>{title}</div>
@@ -286,8 +300,10 @@ const s = {
   profileHead: { textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.6)", paddingBottom: 16, marginBottom: 10 },
   profileName: { fontSize: 22, fontWeight: 700, color: "#1F2937" },
   profileTag: { fontSize: 13, color: "#6B7280", fontWeight: 700, marginTop: 2 },
-  hallRow: { display: "flex", justifyContent: "center", gap: 8, marginTop: 10 },
-  hallPill: { fontSize: 13, color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", border: "1px solid #A8D5E3", padding: "5px 14px", fontWeight: 700, borderRadius: 16, boxShadow: "0 2px 10px rgba(168, 213, 227, 0.4)" },
+
+  filterRow: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16, marginBottom: 16, justifyContent: "center" },
+  filterChip: { fontSize: 13, fontFamily: "'Times New Roman', Times, serif", color: "#4B5563", background: "rgba(255, 255, 255, 0.3)", border: "1px solid rgba(255, 255, 255, 0.5)", padding: "6px 14px", cursor: "pointer", borderRadius: 20, fontWeight: 700 },
+  filterChipActive: { color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", borderColor: "rgba(255, 255, 255, 1)", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" },
 
   section: { marginTop: 18 },
   sectionTitle: { fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em", opacity: 0.75 },
