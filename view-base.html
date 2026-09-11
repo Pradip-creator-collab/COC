@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>View Base — Clash of Clans</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="shared.css">
+<style>
+  textarea, input { 
+    font-family: 'Times New Roman', Times, serif !important;
+    background: rgba(255, 255, 255, 0.4) !important; 
+    border: 1px solid rgba(255, 255, 255, 0.7) !important; 
+    color: #1F2937 !important; 
+    border-radius: 10px !important;
+    font-weight: 600;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.02);
+  }
+  textarea:focus, input:focus { 
+    border-color: rgba(255, 255, 255, 1) !important; 
+    background: rgba(255, 255, 255, 0.7) !important;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3) !important;
+  }
+  textarea::placeholder, input::placeholder { color: #6B7280 !important; opacity: 0.8; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/@babel/standalone/7.23.5/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+function ViewBase() {
+  const [tag, setTag] = useState("");
+  const [playerData, setPlayerData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!tag.trim()) return;
+    setLoading(true);
+    setError("");
+    setPlayerData(null);
+
+    // Bhabishoyte jodi backend API banan, ei nicher code-ta use korben:
+    /*
+    try {
+      const response = await fetch(`https://your-backend-api.com/player/${tag.replace('#', '')}`);
+      const data = await response.json();
+      setPlayerData(data);
+    } catch(err) {
+      setError("Player not found or API error.");
+    }
+    */
+
+    // Ei muhurte dekhano ba design check korar jonno Demo Data (Simulated API Call)
+    setTimeout(() => {
+      if(tag === "#ERROR") {
+        setError("Player not found. Please check the tag.");
+      } else {
+        setPlayerData({
+          name: "Gaming King",
+          tag: tag.toUpperCase(),
+          townHallLevel: 15,
+          clan: { name: "Warriors Elite" },
+          heroes: [
+            { name: "Barbarian King", level: 85, maxLevel: 90 },
+            { name: "Archer Queen", level: 90, maxLevel: 90 },
+            { name: "Grand Warden", level: 60, maxLevel: 65 }
+          ],
+          pets: [
+            { name: "L.A.S.S.I", level: 10, maxLevel: 10 },
+            { name: "Mighty Yak", level: 8, maxLevel: 10 }
+          ],
+          troops: [
+            { name: "Barbarian", level: 11, maxLevel: 11 },
+            { name: "Archer", level: 11, maxLevel: 11 },
+            { name: "Dragon", level: 9, maxLevel: 10 }
+          ]
+        });
+      }
+      setLoading(false);
+    }, 1000); // 1 second fake loading delay
+  };
+
+  return (
+    <div style={s.wrapper}>
+      <div style={s.container}>
+        <div style={s.header}>
+          <div>
+            <div style={s.eyebrow}>Player Search</div>
+            <h1 style={s.title}>View Base Stats</h1>
+          </div>
+          <button onClick={() => window.location.href = "coc-upgrade.html"} style={s.backBtn}>← Back to Tracker</button>
+        </div>
+
+        <form onSubmit={handleSearch} style={s.searchForm}>
+          <input 
+            placeholder="Enter Player Tag (e.g. #Y2LQ...)" 
+            value={tag} 
+            onChange={(e) => setTag(e.target.value)} 
+            style={s.input}
+          />
+          <button type="submit" disabled={loading} style={s.searchBtn}>
+            {loading ? "Searching..." : "Search"}
+          </button>
+        </form>
+
+        {error && <div style={s.errorText}>{error}</div>}
+
+        {playerData && (
+          <div style={s.profileCard}>
+            <div style={s.profileHeader}>
+              <h2 style={s.playerName}>{playerData.name} <span style={s.playerTag}>{playerData.tag}</span></h2>
+              <div style={s.playerTh}>TH {playerData.townHallLevel}</div>
+            </div>
+            {playerData.clan && <div style={s.clanName}>🛡️ Clan: {playerData.clan.name}</div>}
+
+            {/* Heroes Section */}
+            <h3 style={s.sectionTitle}>Heroes</h3>
+            <div style={s.grid}>
+              {playerData.heroes.map((h, i) => (
+                <div key={i} style={s.itemBox}>
+                  <div style={s.itemName}>{h.name}</div>
+                  <div style={s.itemLevel}>Lv {h.level} / <span style={s.maxText}>{h.maxLevel}</span></div>
+                </div>
+              ))}
+            </div>
+
+            {/* Pets Section */}
+            <h3 style={s.sectionTitle}>Pets</h3>
+            <div style={s.grid}>
+              {playerData.pets.map((p, i) => (
+                <div key={i} style={s.itemBox}>
+                  <div style={s.itemName}>{p.name}</div>
+                  <div style={s.itemLevel}>Lv {p.level} / <span style={s.maxText}>{p.maxLevel}</span></div>
+                </div>
+              ))}
+            </div>
+
+            {/* Troops Section */}
+            <h3 style={s.sectionTitle}>Troops (Top)</h3>
+            <div style={s.grid}>
+              {playerData.troops.map((t, i) => (
+                <div key={i} style={s.itemBox}>
+                  <div style={s.itemName}>{t.name}</div>
+                  <div style={s.itemLevel}>Lv {t.level} / <span style={s.maxText}>{t.maxLevel}</span></div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const s = {
+  wrapper: { background: "transparent", minHeight: "100vh", padding: "24px 16px", fontFamily: "'Times New Roman', Times, serif" },
+  container: { maxWidth: 640, margin: "0 auto", background: "rgba(255, 255, 255, 0.45)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255, 255, 255, 0.7)", padding: 28, borderRadius: 20, boxShadow: "0 12px 40px rgba(168, 213, 227, 0.25)" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 },
+  eyebrow: { fontSize: 13, color: "#6B7280", letterSpacing: "0.06em", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 },
+  title: { fontFamily: "'Times New Roman', Times, serif", fontWeight: 700, fontSize: 30, color: "#1F2937", margin: 0 },
+  backBtn: { fontSize: 13, fontFamily: "'Times New Roman', Times, serif", color: "#4B5563", background: "rgba(255, 255, 255, 0.5)", border: "1px solid rgba(255, 255, 255, 0.8)", padding: "6px 14px", cursor: "pointer", borderRadius: 8, fontWeight: 700, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" },
+  
+  searchForm: { display: "flex", gap: 10, marginBottom: 24 },
+  input: { flex: 1, padding: "10px 14px", fontSize: 15 },
+  searchBtn: { border: "1px solid rgba(255,255,255,1)", fontFamily: "'Times New Roman', Times, serif", padding: "10px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", color: "#1F2937", background: "rgba(255, 255, 255, 0.9)", borderRadius: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.06)", whiteSpace: "nowrap" },
+  
+  errorText: { color: "#BE123C", fontSize: 14, margin: "10px 0", border: "1px solid rgba(254, 205, 211, 0.8)", padding: "8px 12px", background: "rgba(255, 228, 230, 0.8)", borderRadius: 8, fontWeight: 700 },
+  
+  profileCard: { background: "rgba(255, 255, 255, 0.3)", border: "1px solid rgba(255, 255, 255, 0.5)", padding: 20, borderRadius: 16 },
+  profileHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.6)", paddingBottom: 10, marginBottom: 10 },
+  playerName: { margin: 0, fontSize: 22, color: "#1F2937", fontWeight: 700 },
+  playerTag: { fontSize: 14, color: "#6B7280", fontWeight: 700, marginLeft: 8 },
+  playerTh: { fontSize: 14, color: "#1F2937", background: "#A8D5E3", padding: "4px 10px", borderRadius: 12, fontWeight: 700 },
+  clanName: { fontSize: 15, color: "#4B5563", fontWeight: 700, marginBottom: 20 },
+  
+  sectionTitle: { fontSize: 18, color: "#1F2937", margin: "0 0 12px 0", borderBottom: "1px dashed rgba(255,255,255,0.8)", paddingBottom: 6 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 20 },
+  itemBox: { background: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.9)", padding: "10px", borderRadius: 10, textAlign: "center" },
+  itemName: { fontSize: 15, color: "#1F2937", fontWeight: 700, marginBottom: 4 },
+  itemLevel: { fontSize: 13, color: "#4B5563", fontWeight: 700 },
+  maxText: { color: "#9CA3AF" },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ViewBase />);
+</script>
+</body>
+</html>
